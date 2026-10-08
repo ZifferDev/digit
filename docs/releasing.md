@@ -6,7 +6,7 @@ This guide describes the release pipeline contract. A release is verified only w
 
 ## CI artifacts and published releases
 
-Ordinary CI runs native checks, tests, build and packaging on macOS ARM64, Linux ARM64, and Linux x64. It uploads unsigned development artifacts. These are useful for inspection and testing, but they are not the signed, notarized public macOS release.
+Ordinary CI runs native checks, tests, build and packaging on macOS ARM64, Linux ARM64, and Linux x64. Each runner also installs and replaces its real packaged executable through the installer with local download fixtures. It uploads unsigned development artifacts. These are useful for inspection and testing, but they are not the signed, notarized public macOS release.
 
 A version-tag push triggers `.github/workflows/release.yml`:
 
@@ -17,7 +17,7 @@ A version-tag push triggers `.github/workflows/release.yml`:
 5. Assemble final assets and checksums, and attest them.
 6. Upload to a draft GitHub release and verify the uploaded asset digests.
 7. Publish the release with repository release immutability enabled.
-8. For stable versions only, update `ZifferDev/homebrew-tap` through the reusable `homebrew.yml` workflow.
+8. For stable versions only, update `ZifferDev/homebrew-tap` through the reusable `homebrew.yml` workflow, then install and test the published formula on all three native platforms.
 
 The `release` GitHub environment provides the six Apple secrets and the repository-scoped `HOMEBREW_TAP_TOKEN`. It allows `v*` tags. Follow [release setup](release-setup.md) if those credentials are missing; do not add secret values to source files, logs, issues, or chat.
 

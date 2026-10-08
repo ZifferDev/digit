@@ -25,3 +25,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: bash scripts/update-homebrew.sh
+  verify-install:
+    needs: update
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: Homebrew/actions/setup-homebrew@9ffcbcc2c89631400988e8d4b1e3ac17dbbe3fe9
+        with:
+          stable: true
+      - name: Install and test the published formula
+        run: |
+          brew install ZifferDev/tap/digit
+          brew test ZifferDev/tap/digit
+          digit console --help
