@@ -15,20 +15,33 @@ This report distinguishes running software from compilation and configuration ch
 - The example manifests pass the same validation as real projects.
 - RC2 with interactive console: 181 tests and 511 assertions pass, including console-command argument safety,
   OP setup, environment options, readable plugin artifacts and scoped destruction.
+- With distribution tooling: 279 tests and 799 assertions pass on all three native GitHub Actions
+  platforms. The additional tests cover packaging, installer failures and atomic replacement,
+  release publication, immutable asset checks, and scoped Homebrew updates.
 - Interactive console tests cover service/environment filtering, cancellation, old-container
   upgrade guidance, terminal requirements, state changes and Docker's detach exit behavior.
 
 ## Platform and CLI evidence
 
-| Check              | Evidence                                                                                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS ARM64 binary | Runs version/help/doctor and shell-completion commands                                                                                              |
-| Linux ARM64 binary | Runs inside a native ARM64 Ubuntu Docker container                                                                                                  |
-| Linux x64 binary   | Runs inside an AMD64 Ubuntu container using emulation; native x64 hardware was not available                                                        |
-| Bash and Zsh       | Completion generation, script syntax, and completion-protocol tests                                                                                 |
-| Fish               | Loaded generated completion in a real Fish shell in Linux ARM64 Docker; command suggestions returned                                                |
-| Guided setup       | Full compiled wizard completed in a real terminal, including defaults, version search, and experimental selection; cancellation verified separately |
-| CI                 | Three-platform test/build matrix configured; remote GitHub Actions has not been run here                                                            |
+| Check              | Evidence                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS ARM64 binary | Runs version/help/doctor and shell-completion commands                                                                                                                                      |
+| Linux ARM64 binary | Runs inside a native ARM64 Ubuntu Docker container and on a native ARM64 GitHub Actions runner                                                                                              |
+| Linux x64 binary   | Runs inside an AMD64 Ubuntu container using emulation and on a native x64 GitHub Actions runner                                                                                             |
+| Bash and Zsh       | Completion generation, script syntax, and completion-protocol tests                                                                                                                         |
+| Fish               | Loaded generated completion in a real Fish shell in Linux ARM64 Docker; command suggestions returned                                                                                        |
+| Guided setup       | Full compiled wizard completed in a real terminal, including defaults, version search, and experimental selection; cancellation verified separately                                         |
+| CI                 | Native tests/builds, installer smoke checks, workflow/shell lint, and assembled distribution checks passed in [GitHub Actions](https://github.com/ZifferDev/digit/actions/runs/37725681464) |
+
+The installer smoke check uses the real compiled archive, installs it into a temporary directory,
+then replaces the installed executable and runs it. Only the download transport is substituted
+with local files. Archive extraction, platform detection, checksums, and execution are real.
+
+Apple Developer ID signing, notarization, immutable GitHub publication, and installation from
+the public Homebrew tap still require the first credentialed release. The pipeline and failure
+tests are in place; no public signed release or stable Homebrew formula has been published.
+An ad-hoc hardened signature was checked locally, but it is not a Developer ID signature or
+evidence of Apple notarization. See [release setup](release-setup.md).
 
 ## Live Minecraft and database evidence
 
@@ -78,8 +91,8 @@ Before using this candidate for an existing community, perform these checks with
 4. Restart the environment and confirm player/world persistence through the client.
 
 These are not covered by a server-list ping or matching configuration files. No production
-worlds were imported or modified. Native Linux x64 server execution and unsigned macOS
-binary distribution also remain release checks before wider publication.
+worlds were imported or modified. Native Linux x64 Minecraft server execution also remains
+unverified; the native x64 CI checks exercise the CLI and distribution, not Minecraft containers.
 
 ## Reproduce
 
