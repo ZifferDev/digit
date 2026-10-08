@@ -39,6 +39,7 @@ jobs:
           stable: true
       - name: Install and test the published formula
         run: |
+          brew trust --tap ZifferDev/tap
           brew install ZifferDev/tap/digit
           brew test ZifferDev/tap/digit
           digit console --help

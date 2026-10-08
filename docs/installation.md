@@ -74,6 +74,10 @@ Once the tap is published, install with:
 brew install ZifferDev/tap/digit
 ```
 
+If Homebrew asks you to trust the third-party tap, the official tap is `ZifferDev/tap`.
+On Homebrew versions with explicit trust controls, run `brew trust --tap ZifferDev/tap`
+and repeat the installation.
+
 The tap repository is [ZifferDev/homebrew-tap](https://github.com/ZifferDev/homebrew-tap). Publishing a formula is separate from building this checkout; do not expect the command to work before that formula is published. Stable Homebrew publication and prerelease binary downloads are separate release steps.
 
 ## Check your installation
