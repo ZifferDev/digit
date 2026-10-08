@@ -12,6 +12,7 @@ import { ensureLock } from './resolve.ts';
 import { prepareDeployment, loadDeployment } from './deployment.ts';
 import * as runtime from './runtime.ts';
 import { attachConsole } from './console.ts';
+import { changePackages } from './package-project';
 import type { Project } from './types.ts';
 
 import { VERSION } from './version';
@@ -86,7 +87,7 @@ export function createProgram(): Command {
     .option('--port <number>', 'public port; 0 selects an available port (default: 25565)')
     .addHelpText(
       'after',
-      '\nExamples:\n  digit init friends\n  digit init friends --yes --proxy --servers lobby,survival --minecraft 1.21.11\n\nPlugins are validated and locked on the first digit up or digit update.\nNo containers are started by init. Commit digit.lock after it is generated.\n',
+      '\nExamples:\n  digit init friends\n  digit init friends --yes --proxy --servers lobby,survival --minecraft 1.21.11\n\nInitial plugins use the same server selection and required-dependency review as digit add.\nWith --yes, initial plugins and their required dependencies go to every Paper server.\nNo containers are started. When plugins are selected, init also writes digit.lock.\n',
     )
     .action(async (directory, options) => {
       const root = await initProject(
@@ -98,6 +99,39 @@ export function createProgram(): Command {
           `Created digit project at ${root}\nNext: digit --project ${JSON.stringify(root)} up`,
         );
     });
+  for (const action of ['add', 'remove'] as const) {
+    cli
+      .command(`${action} [plugins...]`)
+      .description(
+        action === 'add'
+          ? 'Add Modrinth plugins with guided server and dependency selection'
+          : 'Remove plugins from selected servers and prune unused dependencies',
+      )
+      .option('--servers <names>', 'comma-separated target services')
+      .option('--all', 'select every eligible service')
+      .option(
+        '-y, --yes',
+        'skip questions and include all required dependencies; specify targets for a network',
+      )
+      .addHelpText(
+        'after',
+        action === 'add'
+          ? '\nExamples:\n  digit add viabackwards\n  digit add viabackwards --servers lobby,survival --yes\n  digit add luckperms@<version> --servers proxy\n\nEdits digit.toml and digit.lock for the whole project. Run digit up to apply.\n'
+          : '\nExamples:\n  digit remove\n  digit remove viabackwards --servers survival\n  digit remove viabackwards viaversion --all\n\nUse manifest aliases. Plugin data is preserved. Run digit up to apply.\n',
+      )
+      .action(async (plugins: string[], options) => {
+        if (cli.opts().profile || cli.getOptionValueSource('env') !== 'default')
+          throw new Error(
+            'add/remove edit project-wide dependencies. Omit --env and --profile; use --servers to choose services.',
+          );
+        const changes = await changePackages(context().root, action, plugins, options);
+        console.log(
+          changes.length
+            ? `${changes.join('\n')}\nSaved digit.toml and digit.lock. Review with git diff, then run digit up to apply.`
+            : 'Plugin selection is already current.',
+        );
+      });
+  }
   cli
     .command('up')
     .description('Prepare and start this environment; wait until ready')
@@ -241,6 +275,32 @@ export function createProgram(): Command {
       for (const name of names(join(completionRoot(), 'environments'), '.toml'))
         complete(name, 'Environment settings');
     };
+  for (const action of ['add', 'remove']) {
+    const command = completion.commands.get(action);
+    const plugins = command?.arguments.get('plugins');
+    if (plugins)
+      plugins.handler = (complete) => {
+        try {
+          const manifest = parse(readFileSync(join(completionRoot(), 'digit.toml'), 'utf8'));
+          for (const alias of Object.keys(manifest.plugins ?? {}))
+            complete(alias, 'Declared plugin');
+        } catch {
+          /* Local completion only. */
+        }
+      };
+    const servers = command?.options.get('servers');
+    if (servers)
+      servers.handler = (complete) => {
+        try {
+          const manifest = parse(readFileSync(join(completionRoot(), 'digit.toml'), 'utf8'));
+          for (const [name, service] of Object.entries(manifest.services ?? {}))
+            if ((service as { type?: string }).type !== 'mariadb')
+              complete(name, 'Minecraft service');
+        } catch {
+          /* Local completion only. */
+        }
+      };
+  }
   for (const command of ['logs', 'cmd', 'console']) {
     const serviceArgument = completion.commands.get(command)?.arguments.get('service');
     if (serviceArgument)

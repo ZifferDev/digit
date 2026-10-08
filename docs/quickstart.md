@@ -16,7 +16,9 @@ Use a stable Minecraft version for the broadest plugin compatibility. Experiment
 
 For a network, the first Paper server you name becomes the initial destination. You can change the proxy's `fallback` list later in `digit.toml`.
 
-The initializer creates configuration files only. It does not start containers or accept Minecraft's EULA.
+Initial plugins use the same guided server selection and required-dependency review as `digit add`.
+When you choose plugins, the initializer creates a matching `digit.lock` as well as the manifest.
+It does not start containers or accept Minecraft's EULA.
 
 ## Start and connect
 

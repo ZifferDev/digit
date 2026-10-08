@@ -79,6 +79,29 @@ The existing friends Paper containers restarted during concurrent runs; logs sho
 Java exits, possibly due to shared Docker memory pressure. No lifecycle command targeted them.
 The test network was stopped to remove the additional load.
 
+## Package management follow-up (8 October)
+
+The compiled macOS ARM64 CLI was exercised against the live PaperMC, Modrinth and Docker
+registry APIs using a disposable project. No Minecraft containers were started for these checks.
+
+- Guided `digit add viabackwards` presented the service picker; selecting `lobby` and `survival`
+  displayed a required ViaVersion dependency confirmation covering both servers.
+- After acceptance, both Paper services locked ViaBackwards `SxGhdsPK` and ViaVersion
+  `FaishMnD`, with readable names. The proxy had no user plugins.
+- Removing ViaBackwards from only `survival` pruned its transitive dependency there and retained
+  the lobby declaration. Guided `digit remove` then removed the remaining lobby installation.
+- The final manifest had no plugin declarations, the lock had no plugins, and frozen-lock
+  validation passed. The original manifest comment was preserved.
+
+Automated package tests additionally cover dependency refusal/cancellation, recursive and cyclic
+dependencies, version conflicts, shared dependencies, preservation of locked selections, older
+lock annotations, concurrent editor changes, inline/dotted/quoted TOML, completion, and the same
+dependency consent and server selection through `init`.
+
+The [native CI run](https://github.com/ZifferDev/digit/actions/runs/37751879856) passed 323 tests
+and 948 assertions on each of macOS ARM64, Linux ARM64, and Linux x64, together with native
+packaging, installer install/replacement checks, lint, and distribution checksum verification.
+
 ## Remaining manual acceptance
 
 A Minecraft 26.3 client was available for RC2, but Computer Use could not attach to its

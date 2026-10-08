@@ -1,10 +1,15 @@
-import { describe, test, expect, afterEach } from 'bun:test';
+import { describe, test, expect, afterEach, beforeEach } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as prompts from '@clack/prompts';
 import { initProject, Cancelled, answer } from '../src/init.ts';
 import { loadProject } from '../src/config.ts';
+import { registry } from './registry';
+const originalFetch = globalThis.fetch;
+beforeEach(() => {
+  registry();
+});
 const directories: string[] = [];
 const versions = async () => [
   { id: '26.3', supported: true, experimental: true, java: 25 },
@@ -17,6 +22,7 @@ async function temp() {
   return dir;
 }
 afterEach(async () => {
+  globalThis.fetch = originalFetch;
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 describe('guided and noninteractive project creation', () => {

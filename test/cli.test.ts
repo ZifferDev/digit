@@ -46,7 +46,35 @@ test('completion suggests commands', async () => {
   expect(result.stdout).toContain('up');
   expect(result.stdout).toContain('init');
   expect(result.stdout).toContain('console');
+  expect(result.stdout).toContain('add');
+  expect(result.stdout).toContain('remove');
 });
+test.each(['add', 'remove'])('%s help documents project-wide package edits', async (command) => {
+  const result = await cli([command, '--help']);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain('--servers');
+  expect(result.stdout).toContain('--all');
+  expect(result.stdout).toContain('--yes');
+  const invalidScope = await cli([command, 'viabackwards', '--env', 'staging']);
+  expect(invalidScope.code).toBe(1);
+  expect(invalidScope.stderr).toContain('project-wide');
+});
+test.each(['add', 'remove'])(
+  '%s completes local plugin aliases and target services',
+  async (command) => {
+    const directory = await mkdtemp(join(tmpdir(), 'digit-pm-completion-'));
+    directories.push(directory);
+    await Bun.write(
+      join(directory, 'digit.toml'),
+      '[plugins.my_plugin]\nsource="modrinth"\nproject="viabackwards"\n[services.lobby]\ntype="paper"\n[services.database]\ntype="mariadb"\n',
+    );
+    const plugins = await cli(['--project', directory, 'complete', '--', command, '']);
+    expect(plugins.stdout).toContain('my_plugin');
+    const servers = await cli(['--project', directory, 'complete', '--', command, '--servers', '']);
+    expect(servers.stdout).toContain('lobby');
+    expect(servers.stdout).not.toContain('database');
+  },
+);
 test('console help explains picker and safe detachment', async () => {
   const result = await cli(['console', '--help']);
   expect(result.code).toBe(0);

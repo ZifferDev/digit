@@ -22,6 +22,15 @@ Dependency identity consists of service type/version/build/channel and its decla
 
 The lock records server download metadata, Java requirements, exact builds, container image index digests, and checked plugin artifacts. Plugin dependencies are resolved recursively; required incompatible versions fail. Optional dependencies are not automatically installed. Minecraft and plugin catalogs remain separate compatibility constraints: an available experimental Minecraft build does not imply compatible plugins exist.
 
+`packages.ts` owns plugin input, aliases, service selection, add/remove plans, and dependency
+consent. Both `init` and the package commands use it with the same resolver. `package-project.ts`
+serializes edits through the project operation lock, checks for concurrent editor changes, and
+stages both files before replacing them. Ordinary write failures roll back applied changes. A
+process crash between the two renames can leave a stale lock, which frozen mode rejects and
+normal resolution can repair. `manifest-edit.ts` uses TOML syntax ranges to preserve unrelated
+formatting and comments, then validates the complete result before writing. Comments inside a
+replaced plugin array or deleted declaration belong to that edited region.
+
 For Velocity, `ENABLE_RCON=true` lets the pinned itzg proxy image's built-in helper download Velocircon from its upstream GitHub release. The helper controls that version (currently 1.0.7 in the selected image); this auxiliary artifact is not separately resolved or checksum-locked by digit. This is a reproducibility limitation of proxy command access. Managed plugin filenames include the configured alias (or dependency project ID) plus a hash so installed plugins remain recognizable without sacrificing artifact identity.
 
 Server startup is delegated to itzg with exact versions/builds. Plugin downloads are materialized and checksum-verified by digit, then supplied through itzg's copy machinery. Missing upstream content fails instead of silently upgrading.
