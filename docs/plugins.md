@@ -105,13 +105,28 @@ Only Modrinth is supported as a user plugin source in this release. Do not place
 ## Update locked dependencies
 
 ```sh
+digit outdated
 digit update
-git diff -- digit.lock
+git diff -- digit.toml digit.lock
 digit plan
 digit up
 ```
 
 `digit update` refreshes the project's locked Minecraft builds, container images, and plugins. It does not restart servers or update the digit CLI executable. The final `up` applies the new selections and may recreate containers.
+
+Use `digit outdated` first for a read-only preview against the existing lockfile. Both commands group changes by service and show the previous and newly resolved versions. For example:
+
+```text
+survival
+  Paper 26.2 build 10 → Paper 26.2 build 11
+  plugin viaversion: 5.5.0 → 5.6.0
+```
+
+Image-only changes and changes to an artifact with the same version are also reported. Plugin version labels come from Modrinth; if that optional lookup fails, digit shows exact locked version IDs instead. A check with no changes says so explicitly. `outdated` never writes the manifest or lockfile, starts containers, or asks to change channels. It reports what your current declarations allow, so pinned versions stay pinned.
+
+When an experimental Paper or Velocity service has a stable build available for its selected release, `update` asks whether to switch. This also recognizes final releases corresponding to `-pre`, `-rc`, and `-SNAPSHOT` versions. Accepted choices persist in `digit.toml` together with the matching lockfile. If the version was `latest`, the prompt explains that switching pins it to that release. If the build was pinned, it explains which stable build will replace the pin; `build = "latest"` stays `latest`.
+
+Use `digit update --stable` to accept these switches without prompting, or `digit update --keep-experimental` to suppress them. Without either flag, noninteractive updates keep experimental channels and report stable availability.
 
 An unchanged lockfile is reused. Ordinary configuration edits do not change dependency selections. When a service's dependency declaration changes, digit preserves selections that are still applicable; an explicit `update` deliberately refreshes the project dependencies.
 

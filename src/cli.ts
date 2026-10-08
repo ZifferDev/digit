@@ -9,6 +9,8 @@ import { initProject, Cancelled } from './init.ts';
 import { withProjectOperation } from './operations.ts';
 import { loadProject } from './config.ts';
 import { ensureLock } from './resolve.ts';
+import { formatUpdateReport, updateApplyCommand } from './update-report';
+import { updateProject, outdatedProject } from './update';
 import { prepareDeployment, loadDeployment } from './deployment.ts';
 import * as runtime from './runtime.ts';
 import { attachConsole } from './console.ts';
@@ -210,16 +212,42 @@ export function createProgram(): Command {
       }),
     );
   cli
+    .command('outdated')
+    .description('Preview available dependency updates without changing project files')
+    .action(async () => {
+      const result = await withProgress('Checking for dependency updates…', () =>
+        outdatedProject(context().root, context()),
+      );
+      const report = await withProgress('Preparing update summary…', () =>
+        formatUpdateReport(result.before, result.after, updateApplyCommand(cli.opts()), undefined, {
+          outdated: true,
+          updateCommand: updateApplyCommand(cli.opts(), 'update'),
+        }),
+      );
+      console.log([...result.notices, report].join('\n\n'));
+    });
+  cli
     .command('update')
     .description('Refresh locked software and plugin versions without restarting')
-    .action(async () =>
-      mutation(async () => {
-        await locked(await project(), false, true);
-        console.log(
-          'Updated digit.lock. Review it with git diff, then run digit plan and digit up.',
-        );
-      }),
-    );
+    .option('--stable', 'switch eligible experimental services to stable without asking')
+    .option('--keep-experimental', 'keep experimental channels without asking')
+    .action(async (options) => {
+      const result = await updateProject(context().root, { ...context(), ...options });
+      const report = await withProgress('Preparing update summary…', () =>
+        formatUpdateReport(result.before, result.after, updateApplyCommand(cli.opts())),
+      );
+      console.log(
+        [
+          ...(result.decisions.length
+            ? [
+                `Saved stable channel selections in digit.toml:\n${result.decisions.map((line) => `  ${line}`).join('\n')}`,
+              ]
+            : []),
+          ...result.notices,
+          report,
+        ].join('\n\n'),
+      );
+    });
   cli
     .command('render')
     .description('Prepare an inspectable local Compose bundle')

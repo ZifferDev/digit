@@ -70,7 +70,8 @@ Each environment has its own worlds, credentials, database contents, and Docker 
 | `digit add [plugins...]`    | Add plugins with server selection and dependency consent |
 | `digit remove [plugins...]` | Remove plugins and prune unused dependencies             |
 | `digit plan`                | Preview configuration and dependency changes             |
-| `digit update`              | Update the project's locked server and plugin versions   |
+| `digit outdated`            | Preview available server, image, and plugin updates      |
+| `digit update`              | Save updates and show the old and new versions           |
 
 **In the interactive console, detach with Ctrl+P, then Ctrl+Q.** Ctrl+C or a `stop` command can interrupt the server. See [operations](docs/operations.md) for the complete command reference and the explicitly confirmed data-destruction command.
 

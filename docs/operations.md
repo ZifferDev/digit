@@ -18,7 +18,8 @@ Run commands from a project directory, or pass `--project /path/to/project`. The
 | `digit cmd <service> <command...>` | Send a single console command                                            |
 | `digit console [service]`          | Pick a running Minecraft service or attach directly                      |
 | `digit plan`                       | Describe changes without starting containers                             |
-| `digit update`                     | Refresh project dependency locks; do not restart containers              |
+| `digit outdated`                   | Preview dependency updates without changing files or running containers  |
+| `digit update`                     | Save dependency updates and report old → new versions                    |
 | `digit render`                     | Prepare a local Compose bundle for inspection                            |
 | `digit doctor`                     | Check Docker, Compose, resources, and consent status                     |
 | `digit complete <shell>`           | Generate Bash, Zsh, or Fish completion                                   |
@@ -41,6 +42,22 @@ digit logs survival -f --tail 200
 `up`, `plan`, and `render` accept `--frozen-lockfile`. Without it, `plan` can write a missing or outdated lockfile, but does not create deployment secrets or start containers. See [plugin and server updates](plugins.md#update-locked-dependencies).
 
 Mutating project operations are serialized locally. If another operation is running, digit reports the lock instead of racing configuration or credential updates.
+
+## Check and apply updates
+
+```sh
+digit outdated
+digit update
+digit up
+```
+
+`outdated` compares the existing lockfile with available selections on the configured channels. It reports server builds, plugins, Java versions, and container images that would change. It leaves project files and running servers untouched, needs network access but not Docker, and exits successfully even when updates are available. If there is no lockfile yet, run `digit update` first.
+
+`update` saves the new selections and shows each change as old → new. It explicitly reports when nothing changed and prints the `digit up` command to apply the result, retaining your project, environment, and profile options.
+
+For experimental Paper or Velocity services, `update` offers to switch to stable when a stable build of the same release is available. It asks before saving that choice in `digit.toml`; `outdated` only reports availability. In unattended scripts, use `digit update --stable` to accept eligible switches or `digit update --keep-experimental` to keep the selected channels. Without either flag, unattended updates keep experimental channels and print a notice.
+
+See [dependency updates](plugins.md#update-locked-dependencies) for version selection and lockfile details.
 
 ## One console command
 

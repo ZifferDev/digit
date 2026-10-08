@@ -108,9 +108,13 @@ export function editManifest(text: string, before: Manifest, after: Manifest): s
   for (const alias of new Set([...Object.keys(before.plugins), ...Object.keys(after.plugins)]))
     if (hash(before.plugins[alias] ?? null) !== hash(after.plugins[alias] ?? null))
       output = set(output, ['plugins', alias], after.plugins[alias]);
-  for (const [name, service] of Object.entries(after.services))
+  for (const [name, service] of Object.entries(after.services)) {
     if (hash(before.services[name]!.plugins) !== hash(service.plugins))
       output = set(output, ['services', name, 'plugins'], service.plugins);
+    for (const field of ['channel', 'version', 'build'] as const)
+      if (before.services[name]![field] !== service[field])
+        output = set(output, ['services', name, field], service[field]);
+  }
   // Never write a partial/ambiguous edit of an unusual but valid TOML representation.
   if (hash(parseManifest(parse(output))) !== hash(after))
     throw new Error('Could not safely edit this manifest. No files were changed.');

@@ -160,6 +160,42 @@ export async function getModrinthProject(project: string): Promise<ModrinthProje
     await json(`${MODRINTH}/project/${encodeURIComponent(project)}`),
   );
 }
+/** Best-effort display metadata. One timeout covers all batches; exact IDs remain the fallback. */
+export async function getModrinthVersionLabels(
+  plugins: LockedPlugin[],
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  const wanted = new Set(plugins.map((plugin) => `${plugin.project}/${plugin.version}`));
+  const ids = [...new Set(plugins.map((plugin) => plugin.version))];
+  const signal = AbortSignal.timeout(5000);
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    try {
+      const response = await fetch(
+        `${MODRINTH}/versions?${new URLSearchParams({ ids: JSON.stringify(ids.slice(offset, offset + 100)) })}`,
+        {
+          headers: { 'User-Agent': USER_AGENT },
+          signal,
+        },
+      );
+      if (!response.ok) {
+        await response.body?.cancel();
+        break;
+      }
+      const versions = z
+        .array(
+          z.object({ id: z.string(), project_id: z.string(), version_number: z.string().min(1) }),
+        )
+        .parse(await response.json());
+      for (const version of versions) {
+        const key = `${version.project_id}/${version.id}`;
+        if (wanted.has(key)) labels.set(key, version.version_number);
+      }
+    } catch {
+      break;
+    }
+  }
+  return labels;
+}
 export async function readLock(root: string): Promise<Lockfile | undefined> {
   const path = join(root, 'digit.lock');
   if (!(await Bun.file(path).exists())) return undefined;
@@ -179,6 +215,27 @@ interface FillBuild {
   id: number;
   channel: string;
   downloads: Record<string, { name: string; url: string; checksums: { sha256: string } }>;
+}
+/** Only consider the selected release (or its final release counterpart), never a different release. */
+export async function findStableBuild(
+  service: Service,
+  lockedVersion?: string,
+): Promise<{ version: string; build: number } | undefined> {
+  if (service.type === 'mariadb' || service.channel !== 'experimental') return undefined;
+  const current =
+    service.version === 'latest'
+      ? (lockedVersion ?? (await resolveSoftware(service)).version)
+      : service.version;
+  const target = current.replace(/[-.](?:snapshot|pre|rc)(?:[-.]?\d+)?$/i, '');
+  const catalog = await versions(service.type);
+  if (!catalog.some((row) => row.version.id === target && row.builds.length)) return undefined;
+  const builds = await json<FillBuild[]>(
+    `${PAPER}/${service.type}/versions/${encodeURIComponent(target)}/builds`,
+  );
+  const stable = builds
+    .filter((build) => build.channel === 'STABLE' && build.downloads['server:default'])
+    .sort((a, b) => b.id - a.id)[0];
+  return stable ? { version: target, build: stable.id } : undefined;
 }
 async function versions(project: string): Promise<FillVersion[]> {
   const data = await json<{ versions: FillVersion[] }>(`${PAPER}/${project}/versions`);
