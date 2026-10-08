@@ -5,18 +5,17 @@ import { isIP } from 'node:net';
 import { stringify } from 'smol-toml';
 import { listPaperVersions } from './resolve.ts';
 import { parseManifest, validateName as validateConfigName } from './config.ts';
-import type { PaperVersion } from './types.ts';
+import type { Lockfile, PaperVersion } from './types.ts';
+import { answer, Cancelled } from './prompts';
+export { answer, Cancelled } from './prompts';
+import {
+  selectPluginInputs,
+  planAdd,
+  pluginInputs,
+  validatePluginInputs,
+  type PackageDependencies,
+} from './packages';
 
-export class Cancelled extends Error {
-  constructor() {
-    super('Setup cancelled. No project files were created.');
-    this.name = 'Cancelled';
-  }
-}
-export function answer<T>(value: T): Exclude<T, symbol> {
-  if (p.isCancel(value)) throw new Cancelled();
-  return value as Exclude<T, symbol>;
-}
 export interface InitOptions {
   yes?: boolean;
   name?: string;
@@ -78,10 +77,6 @@ const validPort = (value: string = '') =>
   /^\d+$/.test(value) && Number(value) <= 65535
     ? undefined
     : 'Use a port from 0 (automatic) to 65535.';
-const validPlugins = (value: string = '') =>
-  csv(value).every((n) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(n))
-    ? undefined
-    : 'Use comma-separated Modrinth project IDs or slugs.';
 function validOperators(value: string = ''): string | undefined {
   return csv(value).every((name) => /^[A-Za-z0-9_]{1,16}$/.test(name))
     ? undefined
@@ -98,6 +93,7 @@ export async function initProject(
     versions?: () => Promise<PaperVersion[]>;
     interactive?: boolean;
     prompts?: typeof p;
+    packages?: PackageDependencies;
   } = {},
 ): Promise<string> {
   const root = resolve(directory);
@@ -254,31 +250,13 @@ export async function initProject(
       : '');
   check(validOperators(operatorsText));
   const operators = [...new Set(csv(operatorsText))];
-  const pluginsText =
-    options.plugins ??
-    (interactive
-      ? answer(
-          await prompts.text({
-            message:
-              'Any Modrinth plugins? Enter project IDs or slugs, comma-separated; leave blank to skip.',
-            defaultValue: '',
-            placeholder: 'viaversion,luckperms',
-            validate: validPlugins,
-          }),
-        )
-      : '');
-  check(validPlugins(pluginsText));
-  const pluginProjects = [...new Set(csv(pluginsText))];
-  const pluginEntries: [string, { source: string; project: string; version: string }][] = [];
-  for (const project of pluginProjects) {
-    let base = project.toLowerCase().slice(0, 32);
-    if (validateName(base)) base = `plugin-${base}`.slice(0, 32);
-    let alias = base;
-    for (let index = 2; pluginEntries.some(([key]) => key === alias); index++)
-      alias = `${base}-${index}`;
-    pluginEntries.push([alias, { source: 'modrinth', project, version: 'latest' }]);
-  }
-  const plugins = pluginEntries.map(([alias]) => alias);
+  check(validatePluginInputs(options.plugins));
+  const pluginProjects =
+    options.plugins !== undefined
+      ? pluginInputs(options.plugins)
+      : interactive
+        ? await selectPluginInputs(prompts, true)
+        : [];
   const database =
     options.database ??
     (interactive
@@ -340,7 +318,7 @@ export async function initProject(
       build: 'latest',
       channel: version.experimental ? 'experimental' : 'stable',
       memory: memory.toUpperCase(),
-      plugins,
+      plugins: [],
       ...(operators.length ? { env: { OPS: operators.join(',') } } : {}),
     };
   if (database) services.database = { type: 'mariadb', version: '11.8' };
@@ -349,9 +327,24 @@ export async function initProject(
     name,
     network: { bind, port: Number(port), motd: `${name} · powered by digit` },
     services,
-    plugins: Object.fromEntries(pluginEntries),
+    plugins: {},
   };
-  parseManifest(document);
+  const initial = parseManifest(document);
+  let lock: Lockfile | undefined;
+  if (pluginProjects.length) {
+    if (await Bun.file(join(root, 'digit.lock')).exists())
+      throw new Error('An existing digit.lock is present. Choose an empty project directory.');
+    const plan = await planAdd(initial, pluginProjects, { yes: options.yes }, undefined, {
+      ...dependencies.packages,
+      interactive,
+      prompts,
+      defaultServers: servers,
+    });
+    document.plugins = plan.manifest.plugins;
+    for (const [name, service] of Object.entries(document.services))
+      (service as { plugins?: string[] }).plugins = plan.manifest.services[name]!.plugins;
+    lock = plan.lock;
+  }
   const manifest = stringify(document);
   if (interactive) {
     prompts.note(
@@ -368,6 +361,8 @@ export async function initProject(
     `# digit: declarative Minecraft servers\n# Commit this file, services/, environments/, and digit.lock to Git.\n\n${manifest}`,
     { flag: 'wx' },
   );
+  if (lock)
+    await writeFile(join(root, 'digit.lock'), `${JSON.stringify(lock, null, 2)}\n`, { flag: 'wx' });
   for (const service of Object.keys(services)) {
     await mkdir(join(root, 'services', service), { recursive: true });
     if (!(await Bun.file(join(root, 'services', service, '.gitkeep')).exists()))

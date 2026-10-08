@@ -149,6 +149,28 @@ async function request(url: string, init: RequestInit = {}, timeout = 30_000): P
 async function json<T>(url: string): Promise<T> {
   return (await (await request(url)).json()) as T;
 }
+const modrinthProjectSchema = z.object({
+  id: pluginName,
+  slug: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+  title: z.string().min(1),
+});
+export type ModrinthProject = z.infer<typeof modrinthProjectSchema>;
+export async function getModrinthProject(project: string): Promise<ModrinthProject> {
+  return modrinthProjectSchema.parse(
+    await json(`${MODRINTH}/project/${encodeURIComponent(project)}`),
+  );
+}
+export async function readLock(root: string): Promise<Lockfile | undefined> {
+  const path = join(root, 'digit.lock');
+  if (!(await Bun.file(path).exists())) return undefined;
+  try {
+    return lockSchema.parse(await Bun.file(path).json());
+  } catch (error) {
+    throw new Error(
+      `Invalid digit.lock: ${error instanceof Error ? error.message : error}. Restore it from Git or remove it and resolve again.`,
+    );
+  }
+}
 interface FillVersion {
   version: { id: string; support: { status: string }; java: { version: { minimum: number } } };
   builds: number[];
@@ -298,6 +320,7 @@ async function resolvePlugins(
   manifest: Manifest,
   service: Service,
   minecraft: string,
+  retained: LockedPlugin[] = [],
 ): Promise<LockedPlugin[]> {
   const selected = new Map<string, ModrinthVersion>();
   const visited = new Set<string>();
@@ -306,6 +329,8 @@ async function resolvePlugins(
     v.loaders.some((l) => loaders.includes(l)) &&
     (service.type === 'velocity' || v.game_versions.includes(minecraft));
   async function find(project: string, wanted = 'latest'): Promise<ModrinthVersion> {
+    const previous = retained.find((v) => v.project === project);
+    if (wanted === 'latest' && previous) wanted = previous.version;
     if (wanted !== 'latest') {
       const version = await json<ModrinthVersion>(
         `${MODRINTH}/project/${encodeURIComponent(project)}/version/${encodeURIComponent(wanted)}`,
@@ -367,7 +392,8 @@ async function resolvePlugins(
   for (const name of service.plugins) {
     const plugin = manifest.plugins[name];
     if (!plugin) throw new Error(`Undefined plugin "${name}".`);
-    const version = await find(plugin.project, plugin.version);
+    const prior = retained.find((v) => v.aliases?.includes(name));
+    const version = await find(plugin.project, prior?.version ?? plugin.version);
     roots.push(version);
     aliases.set(version.project_id, [...(aliases.get(version.project_id) ?? []), name].sort());
   }
@@ -398,17 +424,22 @@ async function resolvePlugins(
       const file = jars.find((f) => f.primary) ?? (jars.length === 1 ? jars[0] : undefined);
       if (!file)
         throw new Error(`Modrinth ${v.project_id}@${v.id} has no unambiguous primary JAR.`);
-      if (filenames.has(file.filename))
-        throw new Error(`Two plugins use filename ${file.filename}; cannot safely install both.`);
-      filenames.add(file.filename);
+      const prior = retained.find((p) => p.project === v.project_id && p.version === v.id);
+      // A package edit does not silently replace an already locked artifact.
+      const artifact = prior
+        ? { filename: prior.filename, url: prior.url, sha256: prior.sha256, sha512: prior.sha512 }
+        : { filename: file.filename, url: file.url, ...file.hashes };
+      if (filenames.has(artifact.filename))
+        throw new Error(
+          `Two plugins use filename ${artifact.filename}; cannot safely install both.`,
+        );
+      filenames.add(artifact.filename);
       return pluginSchema.parse({
-        name: aliases.get(v.project_id)?.[0] ?? v.project_id,
+        name: aliases.get(v.project_id)?.[0] ?? prior?.name ?? v.project_id,
         aliases: aliases.get(v.project_id) ?? [],
         project: v.project_id,
         version: v.id,
-        filename: file.filename,
-        url: file.url,
-        ...file.hashes,
+        ...artifact,
       });
     })
     .sort((a, b) => a.project.localeCompare(b.project));
@@ -457,6 +488,7 @@ export async function resolveLock(
   manifest: Manifest,
   previous?: Lockfile,
   update = false,
+  previousManifest?: Manifest,
 ): Promise<Lockfile> {
   if (previous) previous = lockSchema.parse(previous);
   const inputHash = dependencyHash(manifest);
@@ -506,12 +538,37 @@ export async function resolveLock(
         const reuseSoftware = !update && prior?.softwareInputHash === softwareInputHash;
         const software = reuseSoftware ? prior : await resolveSoftware(service);
         const repository = service.type === 'paper' ? 'itzg/minecraft-server' : 'itzg/mc-proxy';
+        let retained: LockedPlugin[] = [];
+        const oldService = previousManifest?.services[name];
+        if (
+          !update &&
+          previousManifest &&
+          oldService &&
+          prior &&
+          prior.inputHash === digest(serviceDependencies(previousManifest, oldService))
+        ) {
+          const named = await nameLockedPlugins(
+            previousManifest,
+            oldService,
+            prior.plugins,
+            pluginProjectIds,
+          );
+          retained = named.filter(
+            (plugin) =>
+              !plugin.aliases?.length ||
+              plugin.aliases.some(
+                (alias) =>
+                  service.plugins.includes(alias) &&
+                  stable(previousManifest.plugins[alias]) === stable(manifest.plugins[alias]),
+              ),
+          );
+        }
         services[name] = {
           ...software,
           inputHash: serviceHash,
           softwareInputHash,
           image: reuseSoftware ? prior.image : await image(repository, `java${software.java}`),
-          plugins: await resolvePlugins(manifest, service, software.version),
+          plugins: await resolvePlugins(manifest, service, software.version, retained),
         };
       }
     } catch (error) {
@@ -526,16 +583,7 @@ export async function ensureLock(
   options: { update?: boolean; frozen?: boolean } = {},
 ): Promise<Lockfile> {
   const path = join(project.root, 'digit.lock');
-  let previous: Lockfile | undefined;
-  if (await Bun.file(path).exists()) {
-    try {
-      previous = lockSchema.parse(await Bun.file(path).json());
-    } catch (error) {
-      throw new Error(
-        `Invalid digit.lock: ${error instanceof Error ? error.message : error}. Restore it from Git or remove it and resolve again.`,
-      );
-    }
-  }
+  const previous = await readLock(project.root);
   if (options.frozen && (!previous || previous.inputHash !== dependencyHash(project.manifest)))
     throw new Error(
       'digit.lock is missing or does not match the manifest. Run digit update and commit the lockfile before using --frozen.',

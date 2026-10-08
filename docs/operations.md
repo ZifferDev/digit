@@ -6,20 +6,22 @@ Run commands from a project directory, or pass `--project /path/to/project`. The
 
 ## Command reference
 
-| Command                            | Behavior                                                             |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| `digit init [directory]`           | Guided project creation; never starts containers                     |
-| `digit up`                         | Resolve as needed, prepare configuration, start, and wait for health |
-| `digit down`                       | Stop/remove containers and network; keep data volumes                |
-| `digit status`                     | Show service state, health, and connection address                   |
-| `digit logs [service]`             | Print recent logs from one or all services                           |
-| `digit cmd <service> <command...>` | Send a single console command                                        |
-| `digit console [service]`          | Pick a running Minecraft service or attach directly                  |
-| `digit plan`                       | Describe changes without starting containers                         |
-| `digit update`                     | Refresh project dependency locks; do not restart containers          |
-| `digit render`                     | Prepare a local Compose bundle for inspection                        |
-| `digit doctor`                     | Check Docker, Compose, resources, and consent status                 |
-| `digit complete <shell>`           | Generate Bash, Zsh, or Fish completion                               |
+| Command                            | Behavior                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `digit init [directory]`           | Guided project creation; never starts containers                         |
+| `digit add [plugins...]`           | Add Modrinth plugins to chosen servers, with required-dependency consent |
+| `digit remove [plugins...]`        | Remove plugins from chosen servers and prune unused dependencies         |
+| `digit up`                         | Resolve as needed, prepare configuration, start, and wait for health     |
+| `digit down`                       | Stop/remove containers and network; keep data volumes                    |
+| `digit status`                     | Show service state, health, and connection address                       |
+| `digit logs [service]`             | Print recent logs from one or all services                               |
+| `digit cmd <service> <command...>` | Send a single console command                                            |
+| `digit console [service]`          | Pick a running Minecraft service or attach directly                      |
+| `digit plan`                       | Describe changes without starting containers                             |
+| `digit update`                     | Refresh project dependency locks; do not restart containers              |
+| `digit render`                     | Prepare a local Compose bundle for inspection                            |
+| `digit doctor`                     | Check Docker, Compose, resources, and consent status                     |
+| `digit complete <shell>`           | Generate Bash, Zsh, or Fish completion                                   |
 
 Global options are `--project` (`-C`), `--env` (`-e`), `--profile`, and `--debug`. Use `digit <command> --help` for command-specific flags. Profiles change configuration during preparation, not the identity of an already running environment.
 
