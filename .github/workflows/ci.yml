@@ -45,6 +45,7 @@ jobs:
           bun build --compile --target="$BUILD_TARGET" src/cli.ts --outfile dist/digit
           tag="v$(bun -p 'require("./package.json").version')"
           bun scripts/release.ts package --tag "$tag" --platform "$PLATFORM" --binary dist/digit --output dist/ci
+          bun scripts/smoke-install.ts "dist/ci/digit-${tag#v}-$PLATFORM.tar.gz"
           ./dist/digit --version
           ./dist/digit console --help
           ./dist/digit complete bash > /tmp/digit-completion.bash

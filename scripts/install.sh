@@ -94,7 +94,9 @@ destination=$install_dir/digit
 reject_brew "$destination"
 if [ -e "$destination" ] || [ -L "$destination" ]; then
   [ ! -L "$destination" ] || fail 'Refusing to replace a symlink; manage its installation at the original location'
-  [ -f "$destination" ] && [ -x "$destination" ] || fail 'Destination exists and is not an executable digit file'
+  if [ ! -f "$destination" ] || [ ! -x "$destination" ]; then
+    fail 'Destination exists and is not an executable digit file'
+  fi
   owner=$(stat -c '%u' "$destination" 2>/dev/null) || owner=$(stat -f '%u' "$destination" 2>/dev/null) || fail 'Cannot determine existing executable ownership'
   [ "$owner" = "$(id -u)" ] || fail 'Existing digit is owned by another user'
   previous=$("$destination" --version 2>/dev/null) || fail 'Existing destination does not identify as digit; refusing to overwrite it'
