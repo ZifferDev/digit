@@ -1,0 +1,3 @@
+# Demonstrates templating; this does not install an Example plugin.
+database_url: '${database.url}'
+environment: '${environment.name}'

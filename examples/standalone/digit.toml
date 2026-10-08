@@ -1,0 +1,11 @@
+schema = 1
+name = "friends"
+
+[services.survival]
+type = "paper"
+version = "1.21.11"
+memory = "2G"
+
+[services.survival.properties]
+difficulty = "normal"
+max-players = 10

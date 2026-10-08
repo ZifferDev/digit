@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.digit/
+.env
+.DS_Store
+coverage/
+*.p12
+*.p8
+*.key
+.secrets/

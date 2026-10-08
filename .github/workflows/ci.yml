@@ -1,0 +1,96 @@
+name: checks
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  check:
+    name: check (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+            target: bun-linux-x64-baseline
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            target: bun-linux-arm64
+          - os: macos-15
+            platform: darwin-arm64
+            target: bun-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run format:check
+      - run: bun scripts/check-docs.ts
+      - run: bun test
+      - name: Build and package native executable
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          bun build --compile --target="$BUILD_TARGET" src/cli.ts --outfile dist/digit
+          tag="v$(bun -p 'require("./package.json").version')"
+          bun scripts/release.ts package --tag "$tag" --platform "$PLATFORM" --binary dist/digit --output dist/ci
+          ./dist/digit --version
+          ./dist/digit console --help
+          ./dist/digit complete bash > /tmp/digit-completion.bash
+          bash -n /tmp/digit-completion.bash
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-ci-${{ matrix.platform }}
+          path: dist/ci/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate workflows and shell scripts
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint"
+          shellcheck scripts/*.sh
+  assemble:
+    name: verify-distribution
+    runs-on: ubuntu-24.04
+    needs: [check, lint]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: unsigned-ci-*
+          merge-multiple: true
+          path: dist/input
+      - name: Assemble and verify unsigned distribution fixture
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          tag="v$(bun -p 'require("./package.json").version')"
+          bun scripts/release.ts assemble --tag "$tag" --repository "$REPOSITORY" --input dist/input --output dist/release --installer scripts/install.sh
+          (cd dist/release && sha256sum -c SHA256SUMS)
+          sh -n dist/release/install.sh

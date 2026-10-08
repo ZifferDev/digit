@@ -1,0 +1,137 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: digit-release
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - id: version
+        name: Require a matching version tag on main
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$REF_TYPE" = tag || { echo 'Run releases from a version tag, not a branch.' >&2; exit 1; }
+          git merge-base --is-ancestor HEAD origin/main
+          bun scripts/release.ts validate --tag "$RELEASE_TAG" --repository "$REPOSITORY" --github-output "$GITHUB_OUTPUT"
+  checks:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  build:
+    needs: [validate, checks]
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+            target: bun-linux-x64-baseline
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            target: bun-linux-arm64
+          - os: macos-15
+            platform: darwin-arm64
+            target: bun-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Compile native release binary
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: bun build --compile --target="$BUILD_TARGET" src/cli.ts --outfile dist/digit
+      - name: Sign and notarize macOS binary
+        if: matrix.platform == 'darwin-arm64'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: bash scripts/sign-macos.sh dist/digit
+      - name: Package verified executable and completions
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bun scripts/release.ts package --tag "$RELEASE_TAG" --platform "$PLATFORM" --binary dist/digit --output dist/release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/release/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+      - name: Preserve notarization diagnostics
+        if: always() && matrix.platform == 'darwin-arm64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          overwrite: true
+          name: apple-notarization
+          path: dist/notarization/*.json
+          if-no-files-found: ignore
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/input
+      - name: Assemble release
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: bun scripts/release.ts assemble --tag "$RELEASE_TAG" --repository "$REPOSITORY" --input dist/input --output dist/release --installer scripts/install.sh
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/release/*
+      - name: Upload draft assets, verify, then publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/publish.ts dist/release
+  homebrew:
+    needs: [validate, publish]
+    if: needs.validate.outputs.prerelease == 'false'
+    uses: ./.github/workflows/homebrew.yml
+    secrets: inherit

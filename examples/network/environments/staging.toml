@@ -1,0 +1,9 @@
+[network]
+bind = "127.0.0.1"
+port = 0
+
+[services.lobby]
+memory = "1G"
+
+[services.survival]
+memory = "1G"

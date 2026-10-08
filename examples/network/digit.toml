@@ -1,0 +1,30 @@
+schema = 1
+name = "friends-network"
+
+[network]
+bind = "127.0.0.1"
+port = 25565
+motd = "Friends' Minecraft network"
+
+[services.proxy]
+type = "velocity"
+fallback = ["lobby"]
+
+[services.lobby]
+type = "paper"
+version = "1.21.11"
+plugins = ["viaversion"]
+
+[services.survival]
+type = "paper"
+version = "1.21.11"
+plugins = ["viaversion"]
+
+[services.database]
+type = "mariadb"
+version = "11.8"
+
+[plugins.viaversion]
+source = "modrinth"
+project = "viaversion"
+version = "latest"
